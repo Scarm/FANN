@@ -16,3 +16,7 @@ QMAKE_CXXFLAGS += -fopenmp
 QMAKE_LFLAGS += -fopenmp
 
 SOURCES += main.cpp
+
+HEADERS += \
+    ImageTransform.h
+
