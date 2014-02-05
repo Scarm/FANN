@@ -4,32 +4,103 @@
 #include <QImage>
 #include <vector>
 #include <iostream>
+#include <algorithm>
 
 using namespace std;
 
-class ImageData
+
+class SampleSet
 {
-private:
-
+    int inputSize;
+    int outputSize;
+    int samples;
 public:
-    int Height;
-    int Width;
-    vector<float> Data;
+    virtual float* Input() = 0;
+    int InputSize() { return inputSize; }
 
-    ImageData(int height, int width)
-        :Height(height)
-        ,Width(width)
-        ,Data(height*width, 0.0)
+    virtual float* Output() = 0;
+    int OutputSize() { return outputSize; }
+
+    int Samples() { return samples; }
+
+    SampleSet(int window, int size)
+        :inputSize(window * window)
+        ,outputSize(window * window)
+        ,samples(size)
     {
 
+    }
+};
+
+class EncoderSampleSet : public SampleSet
+{
+
+    vector<float> Data;
+
+public:
+    EncoderSampleSet(int window, int size)
+        :SampleSet(window, size)
+        ,Data(window * window * size)
+    {
+    }
+
+    float* Input()
+    {
+        return &Data[0];
+    }
+
+    float* Output()
+    {
+        return &Data[0];
     }
 };
 
 class ImageSet
 {
 private:
+
+    struct ImageData
+    {
+        int Height;
+        int Width;
+        vector<float> Data;
+
+        ImageData(int height, int width)
+            :Height(height)
+            ,Width(width)
+            ,Data(height*width, 0.0)
+        {
+
+        }
+    };
+
+    struct SampleTask
+    {
+        int X, Y;
+        ImageData* Set;
+        int order;
+
+        SampleTask(int x, int y, ImageData& src)
+            :X(x)
+            ,Y(y)
+            ,Set(&src)
+        {
+            order = rand();
+        }
+    };
+
+
+
+    struct TaskSort {
+      bool operator() (const SampleTask& i,const SampleTask& j)
+      {
+          return (i.order < j.order);
+      }
+    };
+
+
     static inline float sigma(const float x, const float alpha) { return 1.0f/( 1.0f + exp(-alpha * x)); }
-public:
+
     static inline vector<QImage> ScaledSet(QImage& src, double scaleRate, int steps)
     {
         vector<QImage> images(steps);
@@ -128,7 +199,7 @@ public:
 
         float alpha = 50.0f;
         float err = 0.0f;
-        while( err < 0.03)
+        while( err < 0.15)
         {
             alpha *= 1.01;
             err = 0.0;
@@ -140,7 +211,7 @@ public:
                     err+= e * e;
                 }
             }
-            err =  err / (Height * Width);
+            err =  sqrt(err / (Height * Width));
         }
 
         for(int x = 0; x < Width; x++)
@@ -152,6 +223,65 @@ public:
         }
 
         return dst;
+    }
+
+    static inline vector<SampleTask> CreateTasks(ImageData& src, int window)
+    {
+        int X = src.Width - window + 1;
+        int Y = src.Height - window + 1;
+        vector<SampleTask> result;
+        result.reserve(X * Y);
+        for (int x = 0; x < X; x++)
+        {
+            for(int y = 0; y < Y; y++)
+            {
+                result.push_back(SampleTask(x, y, src));
+            }
+        }
+        return result;
+    }
+
+    static inline void ExtractData(ImageData& src, int X, int Y, int window, float* dst)
+    {
+        for(int x = 0; x < window; x++)
+        {
+            for(int y = 0; y < window; y++)
+            {
+                dst[y * window + x] = src.Data[ (y + Y)* src.Width + (x + X)];
+            }
+        }
+    }
+
+public:
+
+    static inline EncoderSampleSet CreateEncoderSamples(QImage& src)
+    {
+        const double scaleRate = exp( 0.25 * log(2) );
+        const int steps = 9;
+        const int window = 16;
+
+        vector<QImage> images = ImageSet::ScaledSet(src, scaleRate, steps);
+        vector<SampleTask> tasks;
+
+        for(int i = 0; i < steps; i++)
+        {
+            ImageData data = ImageSet::GetData(images[i]);
+            data = ImageSet::Normalize(data,window);
+            vector<SampleTask> tmp = ImageSet::CreateTasks(data, window);
+            tasks.insert(tasks.end(), tmp.begin(), tmp.end());
+        }
+        sort(tasks.begin(),tasks.end(), TaskSort());
+
+        EncoderSampleSet result(window, tasks.size());
+        float* data = result.Input();
+        int size = result.InputSize();
+
+        for(int i = 0; i < (int)tasks.size(); i++)
+        {
+            SampleTask& task = tasks[i];
+            ExtractData(*task.Set, task.X, task.Y, window, &data[size * i]);
+        }
+        return result;
     }
 
 };
