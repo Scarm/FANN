@@ -18,7 +18,27 @@ QMAKE_LFLAGS += -fopenmp
 SOURCES += main.cpp
 
 HEADERS += \
-    ImageTransform.hpp
+    ImageTransform.hpp \
+    Working/Layer.hpp \
+    Working/Activator.hpp \
+    Working/Connector.hpp \
+    Working/BaseNetwork.hpp \
+    Working/Network.hpp
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
